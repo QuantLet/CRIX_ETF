@@ -1,14 +1,14 @@
 Name of QuantLet : 'CRIX_ETF'
 
 
-
 Published in : 'BRC-RDC' 
 
 
-Description : 'Simulates an ETF on the CRIX (Haerdle and Trimborn 2015). Requires Cryptocurrency Data from https://box.hu-berlin.de/d/588d5e7e5de84ae58a51/ '
+Description : 'Scenario analysis for an ETF on the CRIX (Haerdle and Trimborn 2015). Requires Cryptocurrency Data from https://box.hu-berlin.de/d/588d5e7e5de84ae58a51/ '
 
 
 Keywords : 'Cryptocurrency, CRIX, ETF'
 
 
 Author : 'Konstantin Häusler'
+
