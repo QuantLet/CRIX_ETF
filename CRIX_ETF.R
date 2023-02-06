@@ -16,20 +16,14 @@ lapply(libraries, library, quietly = TRUE, character.only = TRUE)
 #load data##
 #############
 
-
+# crix time series
+crix.ts <- read.csv("new_crix.csv")
+crix.ts$date <- as.Date(crix.ts$date, format="%Y-%m-%d")
 
 #CRIX weights
-#input structure: 
-#rebalancing date (format = "%Y-%m-%d") / constituent name / weight
-crix.weights <- read.csv("constituents.csv")
-#crix.weights$date <- c(rep(c("2018-01-01"),5),  rep(c("2018-03-14"),5), rep(c("2018-04-13"),5))
-#crix.weights$date <- as.date(crix.weights$date, format="%Y-%m-%d")
-crix.weights$date <- as.factor(crix.weights$date)
+crix.weights <- read.csv("constituents_data-3.csv")
 crix.weights$index_name <- NULL
-crix.weights$X <- NULL
 names(crix.weights) <- c("date", "index_members", "weights")
-crix.weights <- crix.weights[as.Date(crix.weights$date,format="%Y-%m-%d" ) <  "2021-06-02"
-                             & as.Date(crix.weights$date,format="%Y-%m-%d" ) >  "2017-12-31" ,]
 
 #CC data (obtained from CoinGecko)
 load(file = "CCs.rda")
@@ -47,7 +41,6 @@ dates$d <- as.Date(dates$d, format = "%Y-%m-%d")
 dates <- dates[dates[["d"]] < "2021-06-02",]
 dates <- as.data.frame(dates)
 names(dates) <- "d"
-
 
 #merge CC names and tickers of crix.weights and CCs
 source("revalue_crix_weights.R")
@@ -72,22 +65,28 @@ fee_schedule <- function(v){
 #spreads (as function of transaction volume)
 spreads <- function(volume){
   #s <-  qr95$coefficients[1] + volume * qr95$coefficients[2]
-  s <<- 2.26e-04  + volume *  2.37e-05
+  s <<- 1.866219e-04  + volume *  5.546762e-09
 }
-
+    
 ###############
 #descriptives##
 ###############
 
 #plot: number of CRIX constituents
-png(file="number_of_constituents.png")
+pdf(file="number_of_constituents.pdf")
 par(bg="transparent")
-plot(table(factor(crix.weights$date)), ylab = "#constituents")
+plot(table(factor(crix.weights$date)), ylab = "# constituents")
 dev.off()
 
+#plot: crix time series
+pdf(file="crix_ts.pdf")
+par(bg="transparent")
+plot(price~date, data= crix.ts[crix.ts$date > "2017-01-01",],
+     type="l",  xlab="", ylab="", col="#008B00")
+dev.off()
 
 # plot: fee schedule
-png(file="fee_schedule.png")
+pdf(file="fee_schedule.pdf")
 par(bg="transparent")
 for (i in c(10e03,50e03,100e03,1000e03)) {
   amount <- fee_schedule(i)
@@ -117,7 +116,7 @@ initial_invest <- function(date){
   
   df <- merge(tmp.df, CCs[,c("Id","prices", "Datetime")], by.x =c("index_members", "date")  ,by.y=c("Id", "Datetime"))
   df$quantity.a.r.prev <- NA
-  df$deposits <- 1000 #initial deposit 
+  df$deposits <- 1000000 #initial deposit 
   
   df$value.crix.pf.s.b.r <- df$deposits * df$weights #distribute money among CRIX constituents
   df$value.crix.pf.aggr.b.r <- sum(df$value.crix.pf.s)
@@ -140,15 +139,10 @@ initial_invest <- function(date){
   
   df$costs <- fee_schedule(df$quantity*df$prices)
   
-  
-  
   df.prev <- df
   print(head(df.prev))
   return(df.prev)
 }
-#date <- "2020-07-01"
-#df.prev <- initial_invest("2020-07-01")  
-#rm(df.prev, df2)
 
 #rebalancing
 
@@ -160,7 +154,6 @@ rebalance <- function(date){
   # CCs that appear at both dates
   sub.df.double <- sub.df[duplicated(sub.df$index_members,  fromLast=TRUE), ] 
   colnames(sub.df.double)[colnames(sub.df.double)=="weights"] <- "prev_weight"
-  #sub.df.double$occurence <- 2
   
   # constituents that dropped out at current rebalancing date
   sub.df.single <- sub.df[-which(sub.df$index_members %in% 
@@ -170,9 +163,9 @@ rebalance <- function(date){
                          by.x =c("index_members", "date")  ,by.y=c("Id", "Datetime"))
   sub.df.single <- merge(sub.df.single, df.prev[,c("index_members", "date", "quantity.a.r")],
                          by= c("index_members", "date"), all.x = T)
-  sub.df.single <- na.omit(sub.df.single) #only CCs that got dropped
+  sub.df.single <- na.omit(sub.df.single) #only CCs that got dropped 
   sub.df.single$spread <- spreads(sub.df.single$quantity)
-  # * sub.df.single$prices #problem:quantity ist in BTC
+
   sub.df.single$costs <- (fee_schedule(sub.df.single$quantity.a.r *sub.df.single$prices))*
     sub.df.single$quantity.a.r * sub.df.single$prices
   sub.df.single <<- sub.df.single
@@ -186,7 +179,7 @@ rebalance <- function(date){
   df <- merge(tmp.df, CCs[,c("Id","prices", "Datetime")], 
               by.x =c("index_members", "date")  ,by.y=c("Id", "Datetime"))
   
-  #merge with data frame from previous round
+  #merge with data frame from previous rebalancing round
   df2 <- merge(df,df.prev[,c("quantity.a.r", "index_members")], by="index_members", all.x = T)
   df2[is.na(df2)] <- 0 
   names(df2)[names(df2)=="quantity.a.r"] <- "quantity.a.r.prev"
@@ -195,15 +188,15 @@ rebalance <- function(date){
   df2$deposits <- crix.deposits$rw.diff[crix.deposits$date==date]
   
   df2$value.crix.pf.s.b.r <- df2$quantity.a.r.prev * df2$prices  
-  #da fehlen die, die aus dem CRIX geflogen sind
+  
   df2$value.crix.pf.aggr.b.r <- sum(df2$value.crix.pf.s.b.r) +
-    sum(sub.df.single$quantity.a.r*sub.df.single$prices)
+    sum(sub.df.single$quantity.a.r*sub.df.single$prices) #value of dropped CCs
   
   df2$quantity <- ((df2$value.crix.pf.aggr.b.r + df2$deposits) * df2$weights) /df2$prices 
   df2$quantity.a.r <- df2$quantity * (1-fee_schedule(df2$quantity*df2$prices))
   
-  df2$value.crix.pf.s.a.r <- df2$quantity.a.r * df2$prices   #irgendwas muss ich hier noch
-  df2$value.crix.pf.aggr.a.r <- sum(df2$value.crix.pf.s.a.r)         #beachten       
+  df2$value.crix.pf.s.a.r <- df2$quantity.a.r * df2$prices  
+  df2$value.crix.pf.aggr.a.r <- sum(df2$value.crix.pf.s.a.r)      
   
   df2$scal.2 <- spread.df$relBTC.2[which(spread.df$Id %in% df2$index_members 
                                          & spread.df$Datetime %in% df2$date)]
@@ -221,19 +214,11 @@ rebalance <- function(date){
                   fee_schedule(df2$deposits * df2$weights))*
     (df2$deposits/
        (df2$deposits + df2$value.crix.pf.aggr.b.r* df2$delta))
-  #df2$costs <- fee_schedule(df2$delta * df2$value.crix.pf.aggr.b.r) *
-  #            (df2$delta * df2$value.crix.pf.aggr.b.r) +
-  #          fee_schedule(df2$deposits * df2$weights) *
-  #         df2$deposits * df2$weights
-  
   
   df.prev <<- df2
   print(head(df.prev))
   return(df.prev)
 }
-#date <- "2020-08-01"
-#date_minus1 <- "2020-07-01"
-#test.rebalance <- rebalance("2020-08-01") #"2018-03-01"
 
 
 #function that calls the above function and combines results
@@ -256,8 +241,6 @@ stepwise <- function(date){
   }
 }
 
-#step3 <- stepwise("2020-08-01") 
-#rm(date, date_minus1, step2, step3, df.prev)
 
 #execute code: loop over all rebalancing dates    
 dropped_coins <- data.frame()
@@ -265,7 +248,7 @@ for (date in as.factor(dates[2:nrow(dates),1])) { #  dates[2:4,1] dates[2:nrow(d
   date_minus1 <- dates[which(dates$d==date)-1,]   %>% as.character
   step3 <- stepwise(date)
 }
-#rm(df.prev, step3, sub.df.double)
+
 
 #-------------------------------------------------------------------------------
 ##########
